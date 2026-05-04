@@ -1,50 +1,187 @@
 ---
 name: roblox-studio-dev
-description: Enterprise-level Roblox game development with Luau. Covers architecture, client-server networking, DataStores, UI, physics, animation, OOP patterns, optimization, and security. Use when building Roblox games, writing Luau scripts, designing game systems, or working with Roblox Studio APIs. Triggers on Roblox, Luau, game development, RemoteEvent, DataStore, TweenService, Roblox Studio.
+description: "Complete Roblox Studio development skill with MCP Bridge remote workflow. Covers: connection testing, pull/read/edit/push cycle, Luau language, architecture, client-server networking, DataStores, UI, physics, animation, OOP, optimization, security, and best practices. Use when building Roblox games, writing Luau scripts, working with Roblox Studio via MCP Bridge, or any Roblox-related task. Triggers on: Roblox, Luau, game development, RemoteEvent, DataStore, TweenService, Roblox Studio, MCP Bridge, roblox-src."
 ---
 
-# Roblox Studio Enterprise Development
+# Roblox Studio Development – Complete Agent Skill
 
-## Architecture Overview
+## CRITICAL: MCP Bridge Workflow (Read First)
 
-Roblox uses a client-server model. The server (DataModel) is authoritative. Services replicate to clients automatically (Workspace, ReplicatedStorage). Clients cannot directly modify server state.
+If this workspace contains `scripts/pull.ps1` and `scripts/push.ps1`, you are working with a **remote Roblox Studio instance** via MCP Bridge. Follow this workflow WITHOUT EXCEPTION.
 
-### Script Types
-- **Script** (ServerScript): Runs on server. RunContext = Server.
-- **LocalScript**: Runs on client only. Access to UserInputService, camera, local player.
-- **ModuleScript**: Shared code. Returns a table. Executed once per environment via `require()`.
+### Step 0: Test Connection
+
+Before doing anything, verify the bridge is alive:
+
+```powershell
+$h = @{"X-API-Key"="YOUR_KEY"; "Content-Type"="application/json"}
+$body = '{"id":"test","action":"getGameTree","params":{"depth":1}}'
+$r = Invoke-RestMethod -Uri "https://bridge-cloud.vercel.app/api/command" -Method POST -Headers $h -Body ([System.Text.Encoding]::UTF8.GetBytes($body))
+$r.success  # Must be True
+```
+
+If `False` or error: Roblox Studio is not running, plugin is not connected, or API key is wrong. Stop and tell the user.
+
+### Step 1: Pull (MANDATORY FIRST ACTION)
+
+```powershell
+.\scripts\pull.ps1
+```
+
+This pulls ALL scripts from Roblox Studio into `roblox-src/`. It:
+- Clears `roblox-src/` completely
+- Downloads every Script, LocalScript, ModuleScript with source
+- Saves them with proper naming (`.server.lua`, `.client.lua`, `.module.lua`)
+- Creates `_tree.json` with the full game instance hierarchy
+
+**NEVER skip this step. NEVER assume local files are current.**
+
+### Step 2: Read & Analyze
+
+Read the pulled files to understand the current game state:
+
+```
+roblox-src/
+  ServerScriptService/     ← Server scripts (.server.lua)
+  ServerStorage/           ← Server modules (.module.lua)
+  StarterGui/              ← Client UI scripts (.client.lua)
+  StarterPlayerScripts/    ← Client scripts (.client.lua)
+  ReplicatedStorage/       ← Shared modules (.module.lua)
+```
+
+Read `_tree.json` for the full instance hierarchy if you need context about non-script instances (Parts, Models, etc.)
+
+### Step 3: Edit Locally
+
+Make all changes to files in `roblox-src/`. Rules:
+- Edit existing files directly
+- Create new `.lua` files in the correct folder with correct suffix
+- Follow the naming convention strictly (see below)
+- NEVER use the API directly to write code – always edit local files
+
+### Step 4: Push
+
+```powershell
+.\scripts\push.ps1
+```
+
+This pushes ALL `.lua` files from `roblox-src/` back to Roblox Studio. Watch the output:
+- `OK` = script updated successfully
+- `FAIL Instance not found` = script doesn't exist in Studio yet (see "Creating New Scripts" below)
+
+### Step 5: Test
+
+Tell the user to test in Roblox Studio (Play button). You cannot test remotely.
+
+### Full Cycle Summary
+
+```
+pull.ps1 → read files → edit locally → push.ps1 → user tests → repeat
+```
+
+### Creating New Scripts
+
+If you create a new file that doesn't exist in Studio yet:
+
+1. Create the local file: e.g. `roblox-src/ServerScriptService/NewScript.server.lua`
+2. Create the instance in Studio first:
+```powershell
+$body = @{id="create-new"; action="executeSnippet"; params=@{code="local s = Instance.new('Script'); s.Name = 'NewScript'; s.Parent = game.ServerScriptService"}} | ConvertTo-Json -Depth 5
+Invoke-RestMethod -Uri $baseUrl -Method POST -Headers $h -Body ([System.Text.Encoding]::UTF8.GetBytes($body))
+```
+3. Then run `.\scripts\push.ps1`
+
+### File Naming Convention
+
+| Suffix | ClassName | Runs On | Container |
+|--------|-----------|---------|-----------|
+| `.server.lua` | Script | Server | ServerScriptService |
+| `.client.lua` | LocalScript | Client | StarterGui, StarterPlayerScripts |
+| `.module.lua` | ModuleScript | Both | ServerStorage, ReplicatedStorage |
+
+Path mapping: `roblox-src/ServerScriptService/GameServer.server.lua` → `game.ServerScriptService.GameServer`
+
+### API Reference (for special cases only)
+
+| Field | Value |
+|-------|-------|
+| Base URL | Defined in `scripts/pull.ps1` (look for `$baseUrl`) |
+| Auth | `X-API-Key` header |
+| Format | JSON body: `{id, action, params}` |
+
+Available actions:
+- `getGameTree` – Full hierarchy (params: `{depth: number}`)
+- `getChildren` – Children of path (params: `{path: string}`)
+- `getScriptSource` – Read one script (params: `{path: string}`)
+- `setScriptSource` – Write one script (params: `{path, source}`)
+- `getAllScripts` – All scripts with source code
+- `createInstance` – Create instance (params: `{className, parentPath, name}`)
+- `deleteInstance` – Destroy (params: `{path}`)
+- `executeSnippet` – Run Luau in command bar (params: `{code}`)
+- `findInstances` – Search (params: `{name?, className?, rootPath?}`)
+
+### Best Practices
+
+1. **Always pull before starting** – Never trust stale local files
+2. **Push after EVERY change batch** – Don't accumulate unpushed changes
+3. **Read before editing** – Understand the code before modifying
+4. **One concern per push** – Fix one thing, push, verify, then next
+5. **Check push output** – If anything FAILs, fix before continuing
+6. **Never hardcode API keys** – Read them from the scripts that already have them
+7. **Don't edit _tree.json** – It's read-only reference, regenerated on pull
+
+---
+
+## Roblox Architecture
+
+### Client-Server Model
+
+Roblox is server-authoritative. The server (DataModel) owns all game state. Clients receive replicated data automatically but cannot modify server state directly.
 
 ### Container Purposes
+
 | Container | Side | Purpose |
 |-----------|------|---------|
 | ServerScriptService | Server | Server scripts (invisible to client) |
-| ServerStorage | Server | Assets/data hidden from client |
+| ServerStorage | Server | Server-only assets, modules |
 | ReplicatedStorage | Both | Shared modules, RemoteEvents, assets |
-| ReplicatedFirst | Client | Loading screen scripts (run first) |
-| StarterGui | Client | UI templates cloned to PlayerGui |
+| ReplicatedFirst | Client | Loading screen (runs before anything else) |
+| StarterGui | Client | UI ScreenGui templates (cloned to PlayerGui) |
 | StarterPlayerScripts | Client | Client scripts per player |
 | StarterCharacterScripts | Client | Scripts inside character model |
-| Workspace | Both | 3D world, parts, models |
+| Workspace | Both | 3D world |
 
-### RunContext (Modern approach, replaces LocalScript)
-```lua
--- Script with RunContext = Client replaces LocalScript
--- Script with RunContext = Server replaces legacy Script placement rules
-```
+### Script Types
+
+| Type | Runs On | Use For |
+|------|---------|---------|
+| Script | Server | Game logic, data, anti-cheat |
+| LocalScript | Client | UI, input, camera, effects |
+| ModuleScript | Where required | Shared code, libraries |
+
+---
 
 ## Luau Language
 
 ### Types & Strict Mode
+
 ```lua
 --!strict
 local count: number = 0
 local name: string = "Player"
 local active: boolean = true
 local data: {[string]: number} = {}
-type PlayerData = { coins: number, level: number, inventory: {string} }
+
+type PlayerData = {
+    coins: number,
+    wins: number,
+    losses: number,
+    inventory: {string}
+}
 ```
 
-### OOP Pattern (Metatable-based)
+### OOP Pattern
+
 ```lua
 local MyClass = {}
 MyClass.__index = MyClass
@@ -66,6 +203,7 @@ end
 ```
 
 ### Inheritance
+
 ```lua
 local Base = {}
 Base.__index = Base
@@ -81,28 +219,37 @@ end
 function Child:method() return "child" end
 ```
 
-### Metatables Key Metamethods
+### Metatables
+
 | Metamethod | Trigger |
 |-----------|---------|
 | `__index` | Accessing nil key |
 | `__newindex` | Setting nil key |
 | `__call` | Calling table as function |
-| `__add/__sub/__mul/__div` | Arithmetic |
 | `__tostring` | tostring() |
 | `__len` | # operator |
-| `__eq/__lt/__le` | Comparison |
 | `__iter` | Generalized iteration |
 
-Use `rawset()`/`rawget()` to bypass metamethods when needed.
+### task Library
+
+```lua
+task.spawn(fn, ...)       -- immediate new thread
+task.defer(fn, ...)       -- next resumption cycle
+task.delay(seconds, fn)   -- delayed execution
+task.wait(seconds)        -- precise yield
+task.cancel(thread)       -- cancel spawned thread
+```
+
+---
 
 ## Client-Server Communication
 
 ### RemoteEvent (Fire-and-forget)
+
 ```lua
--- ReplicatedStorage/RemoteEvent
 -- SERVER:
 remote.OnServerEvent:Connect(function(player, data)
-    -- validate ALL client input here
+    -- validate ALL client input
 end)
 remote:FireClient(player, responseData)
 remote:FireAllClients(broadcastData)
@@ -113,6 +260,7 @@ remote.OnClientEvent:Connect(function(data) end)
 ```
 
 ### RemoteFunction (Request-Response)
+
 ```lua
 -- SERVER:
 remoteFunc.OnServerInvoke = function(player, args)
@@ -123,13 +271,15 @@ end
 local result = remoteFunc:InvokeServer(args)
 ```
 
-### Critical Rules
-- NEVER trust client data. Validate everything server-side.
+### Rules
+
+- NEVER trust client data. Validate type, range, frequency server-side.
 - Arguments are copied (not referenced). Tables lose metatables.
-- `nil` replaces non-replicable types (functions, userdata, threads).
-- Mixed tables (array + dict) may not replicate correctly.
-- RemoteFunction:InvokeClient is dangerous (client can hang server). Avoid it.
-- Rate-limit remote calls to prevent exploitation.
+- nil replaces non-replicable types (functions, userdata).
+- RemoteFunction:InvokeClient is dangerous (client can hang server). Avoid.
+- Rate-limit remote calls per player.
+
+---
 
 ## DataStoreService
 
@@ -137,12 +287,10 @@ local result = remoteFunc:InvokeServer(args)
 local DataStoreService = game:GetService("DataStoreService")
 local store = DataStoreService:GetDataStore("PlayerData")
 
--- ALWAYS pcall DataStore operations
 local success, data = pcall(function()
     return store:GetAsync("Player_" .. player.UserId)
 end)
 
--- UpdateAsync for atomic read-modify-write (preferred over SetAsync)
 pcall(function()
     store:UpdateAsync("Player_" .. player.UserId, function(old)
         old = old or {coins = 0, level = 1}
@@ -153,28 +301,63 @@ end)
 ```
 
 ### Best Practices
+
+- ALWAYS pcall DataStore operations
 - Use UpdateAsync over SetAsync (prevents race conditions)
-- Implement session locking to prevent data duplication
-- Auto-save every 30-60 seconds + save on PlayerRemoving + BindToClose
-- Budget: 60 + numPlayers×10 GetAsync/min, 60 + numPlayers×10 SetAsync/min
+- Implement session locking for competitive games
+- Auto-save every 30-60 seconds + PlayerRemoving + BindToClose
+- Budget: 60 + numPlayers×10 requests/min per type
 - Key max 50 chars, Value max 4MB
 - Use OrderedDataStore for leaderboards
 
-### Session Lock Pattern
+### Data Manager Pattern
+
 ```lua
-local LOCK_KEY = "lock_"
-function acquireLock(store, key, serverId)
-    local success = pcall(function()
-        store:UpdateAsync(LOCK_KEY .. key, function(old)
-            if old and old.serverId ~= serverId and os.time() - old.time < 300 then
-                return nil -- abort, locked by another server
-            end
-            return {serverId = serverId, time = os.time()}
-        end)
+local DataManager = {}
+local playerCache = {}
+local DEFAULT_DATA = {coins = 100, wins = 0, losses = 0, gamesPlayed = 0}
+
+function DataManager.loadPlayer(player)
+    local key = "Player_" .. player.UserId
+    local success, data = pcall(function()
+        return store:GetAsync(key)
     end)
-    return success
+    if success then
+        playerCache[player] = data or table.clone(DEFAULT_DATA)
+    else
+        playerCache[player] = table.clone(DEFAULT_DATA)
+    end
+    return playerCache[player]
 end
+
+function DataManager.get(player)
+    return playerCache[player]
+end
+
+function DataManager.save(player)
+    local data = playerCache[player]
+    if not data then return end
+    pcall(function()
+        store:SetAsync("Player_" .. player.UserId, data)
+    end)
+end
+
+function DataManager.cleanup(player)
+    DataManager.save(player)
+    playerCache[player] = nil
+end
+
+game.Players.PlayerRemoving:Connect(DataManager.cleanup)
+game:BindToClose(function()
+    for _, player in game.Players:GetPlayers() do
+        DataManager.save(player)
+    end
+end)
+
+return DataManager
 ```
+
+---
 
 ## TweenService
 
@@ -183,9 +366,9 @@ local TweenService = game:GetService("TweenService")
 
 local tweenInfo = TweenInfo.new(
     1,                          -- duration
-    Enum.EasingStyle.Quad,      -- easing style
-    Enum.EasingDirection.Out,   -- easing direction
-    0,                          -- repeat count (-1 = infinite)
+    Enum.EasingStyle.Quad,      -- style
+    Enum.EasingDirection.Out,   -- direction
+    0,                          -- repeat (-1 = infinite)
     false,                      -- reverses
     0                           -- delay
 )
@@ -198,157 +381,122 @@ tween:Play()
 tween.Completed:Connect(function(status) end)
 ```
 
-### EasingStyles
-Linear, Sine, Quad, Cubic, Quart, Quint, Exponential, Circular, Back, Bounce, Elastic
+EasingStyles: Linear, Sine, Quad, Cubic, Quart, Quint, Exponential, Circular, Back, Bounce, Elastic
 
-### Tween Sequencing
-```lua
-local tween1 = TweenService:Create(obj, info, {Position = target1})
-local tween2 = TweenService:Create(obj, info, {Rotation = target2})
-tween1:Play()
-tween1.Completed:Connect(function() tween2:Play() end)
-```
+---
 
 ## UI System
 
 ### Hierarchy
-- ScreenGui → Frame/TextLabel/TextButton/ImageLabel/ImageButton/TextBox
-- SurfaceGui (attached to Part face)
-- BillboardGui (always faces camera)
+
+ScreenGui → Frame → TextLabel / TextButton / ImageLabel / TextBox
 
 ### Layout Objects
-- UIListLayout: Arranges children in list
-- UIGridLayout: Grid arrangement
-- UIPageLayout: Swipeable pages
-- UITableLayout: Table rows/cols
-- UIPadding, UIStroke, UIGradient, UICorner, UIAspectRatioConstraint
+
+UIListLayout, UIGridLayout, UIPageLayout, UITableLayout, UIPadding, UIStroke, UIGradient, UICorner, UIAspectRatioConstraint
 
 ### Sizing
-- UDim2.new(scaleX, offsetX, scaleY, offsetY)
-- Scale = percentage of parent (0-1), Offset = pixels
-- Always prefer Scale for responsive UI
 
-### Typewriter Effect
 ```lua
-function typeWrite(label, text, delay)
-    label.MaxVisibleGraphemes = 0
-    label.Text = text
-    for i = 1, utf8.len(text) do
-        label.MaxVisibleGraphemes = i
-        task.wait(delay)
-    end
-end
+UDim2.new(scaleX, offsetX, scaleY, offsetY)
+-- Scale = percentage of parent (0-1)
+-- Offset = pixels
+-- Always prefer Scale for responsive UI
 ```
+
+### Code-Generated UI Pattern
+
+```lua
+local screenGui = Instance.new("ScreenGui")
+screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
+screenGui.Parent = player.PlayerGui
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0.3, 0, 0.5, 0)
+frame.Position = UDim2.new(0.35, 0, 0.25, 0)
+frame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+frame.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 12)
+corner.Parent = frame
+
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(100, 60, 255)
+stroke.Thickness = 2
+stroke.Parent = frame
+```
+
+---
 
 ## Physics & Constraints
 
-### Modern Constraints (use these, not deprecated Body objects)
-| Constraint | Purpose |
-|-----------|---------|
-| AlignPosition | Move part to target position |
-| AlignOrientation | Rotate part to target orientation |
-| LinearVelocity | Constant velocity |
-| AngularVelocity | Constant rotation |
-| VectorForce | Apply force |
-| Torque | Apply torque |
-| BallSocketConstraint | Joint (ragdoll) |
-| HingeConstraint | Door/wheel |
-| SpringConstraint | Spring physics |
-| RopeConstraint | Rope |
-| WeldConstraint | Rigid connection |
+### Modern Constraints (use instead of deprecated BodyForce etc.)
+
+AlignPosition, AlignOrientation, LinearVelocity, AngularVelocity, VectorForce, Torque, BallSocketConstraint, HingeConstraint, SpringConstraint, RopeConstraint, WeldConstraint
 
 ### Network Ownership
+
 ```lua
--- Server decides which client simulates physics
-part:SetNetworkOwner(player) -- player simulates this part
+part:SetNetworkOwner(player) -- player simulates physics
 part:SetNetworkOwner(nil)    -- server simulates
-part:SetNetworkOwnershipAuto() -- engine decides
+part:SetNetworkOwnershipAuto()
 ```
 
 ### Collision Groups
+
 ```lua
 local PhysicsService = game:GetService("PhysicsService")
 PhysicsService:RegisterCollisionGroup("Players")
 PhysicsService:RegisterCollisionGroup("Projectiles")
 PhysicsService:CollisionGroupSetCollidable("Players", "Projectiles", false)
-part.CollisionGroup = "Players"
 ```
 
-## Services Reference
+---
+
+## Services Quick Reference
 
 | Service | Purpose |
 |---------|---------|
-| Players | Player management, PlayerAdded/Removing |
+| Players | PlayerAdded/Removing, player management |
 | RunService | Heartbeat, RenderStepped, Stepped |
-| UserInputService | Keyboard/mouse/touch/gamepad input |
+| UserInputService | Input (keyboard/mouse/touch/gamepad) |
 | TweenService | Property animation |
 | DataStoreService | Persistent data |
-| ReplicatedStorage | Shared assets/modules/remotes |
-| ServerStorage | Server-only assets |
-| Workspace | 3D world |
-| Lighting | Environment lighting, atmosphere |
-| SoundService | Audio |
 | MarketplaceService | Purchases, DevProducts, GamePasses |
 | CollectionService | Tag-based instance management |
 | PathfindingService | NPC navigation |
-| PhysicsService | Collision groups |
-| HttpService | External HTTP (JSON encode/decode) |
-| ContextActionService | Mobile/gamepad action binding |
-| Chat | Chat system |
-| Teams | Team management |
-| BadgeService | Award badges |
+| HttpService | External HTTP, JSON encode/decode |
+| MemoryStoreService | Cross-server temp data (matchmaking) |
+| MessagingService | Cross-server pub/sub |
 | TeleportService | Place teleportation |
-| MessagingService | Cross-server communication |
-| MemoryStoreService | Temporary shared data (matchmaking) |
+| SoundService | Audio |
 
-## Performance & Optimization
+---
 
-### Critical Rules
-- Avoid creating/destroying instances in loops (use object pooling)
-- Use task.wait() not wait() (more precise)
-- Minimize RemoteEvent traffic (batch updates)
-- Use CollectionService tags instead of iterating all descendants
-- Streaming: Enable InstanceStreaming for large maps
-- Avoid :GetDescendants() in hot paths
-- Use Parallel Luau (Actor) for CPU-heavy work
+## MarketplaceService
 
-### Object Pooling
 ```lua
-local pool = {}
-function getFromPool()
-    local obj = table.remove(pool)
-    if not obj then
-        obj = createNewObject()
-    end
-    obj.Parent = workspace
-    return obj
+local MPS = game:GetService("MarketplaceService")
+
+MPS.ProcessReceipt = function(info)
+    local player = game.Players:GetPlayerByUserId(info.PlayerId)
+    if not player then return Enum.ProductPurchaseDecision.NotProcessedYet end
+    grantProduct(player, info.ProductId)
+    return Enum.ProductPurchaseDecision.PurchaseGranted
 end
-function returnToPool(obj)
-    obj.Parent = nil
-    table.insert(pool, obj)
-end
+
+MPS:PromptProductPurchase(player, PRODUCT_ID)
+local hasPass = MPS:UserOwnsGamePassAsync(player.UserId, PASS_ID)
 ```
 
-### Custom Profiling
-```lua
-debug.profilebegin("MyExpensiveFunction")
--- code
-debug.profileend()
--- View in MicroProfiler (Ctrl+F6)
-```
-
-### Parallel Luau
-```lua
--- Script inside an Actor instance
-local actor = script:GetActor()
-task.desynchronize() -- switch to parallel
--- safe parallel work (no shared state mutation)
-task.synchronize() -- back to serial for API calls
-```
+---
 
 ## Security & Anti-Cheat
 
 ### Golden Rules
+
 1. Server is ALWAYS authoritative. Never trust the client.
 2. Validate ALL RemoteEvent arguments (type, range, frequency).
 3. Never store important state client-side only.
@@ -359,29 +507,61 @@ task.synchronize() -- back to serial for API calls
 8. Use ServerStorage/ServerScriptService for sensitive data.
 
 ### Validation Pattern
+
 ```lua
 remote.OnServerEvent:Connect(function(player, action, data)
     if typeof(action) ~= "string" then return end
     if typeof(data) ~= "table" then return end
-
-    local character = player.Character
-    if not character then return end
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-
-    -- Range check
-    if (hrp.Position - targetPos).Magnitude > MAX_RANGE then return end
-
-    -- Rate limit
     if not checkRateLimit(player, action) then return end
-
     -- Process valid request
 end)
 ```
 
+---
+
+## Performance & Optimization
+
+- Avoid creating/destroying instances in loops → use object pooling
+- Use `task.wait()` not `wait()` (more precise)
+- Minimize RemoteEvent traffic → batch updates
+- Use CollectionService tags instead of iterating all descendants
+- Enable InstanceStreaming for large maps
+- Avoid `:GetDescendants()` in hot paths
+- Use Parallel Luau (Actor) for CPU-heavy work
+- Set Parent LAST when creating instances (avoids unnecessary change events)
+
+### Object Pooling
+
+```lua
+local pool = {}
+function getFromPool()
+    local obj = table.remove(pool)
+    if not obj then obj = createNewObject() end
+    obj.Parent = workspace
+    return obj
+end
+function returnToPool(obj)
+    obj.Parent = nil
+    table.insert(pool, obj)
+end
+```
+
+### Parallel Luau
+
+```lua
+local actor = script:GetActor()
+task.desynchronize()
+-- safe parallel work (no shared state mutation)
+task.synchronize()
+-- back to serial for API calls
+```
+
+---
+
 ## Common Game Patterns
 
 ### Round System
+
 ```lua
 local STATUS = {Waiting = 1, Active = 2, Ending = 3}
 local currentStatus = STATUS.Waiting
@@ -400,7 +580,29 @@ function endRound(winner)
 end
 ```
 
-### Touched Event (Debounced)
+### Matchmaking Queue
+
+```lua
+local queues = {}
+
+function joinQueue(player, gameType, bet)
+    if not queues[gameType] then queues[gameType] = {} end
+    table.insert(queues[gameType], {player = player, bet = bet})
+    tryMatch(gameType)
+end
+
+function tryMatch(gameType)
+    local q = queues[gameType]
+    if #q >= 2 then
+        local p1 = table.remove(q, 1)
+        local p2 = table.remove(q, 1)
+        startGame(p1, p2, gameType)
+    end
+end
+```
+
+### Debounced Touch
+
 ```lua
 local debounce = {}
 part.Touched:Connect(function(hit)
@@ -408,64 +610,15 @@ part.Touched:Connect(function(hit)
     if not player then return end
     if debounce[player] then return end
     debounce[player] = true
-
-    -- action here
-
+    -- action
     task.wait(1)
     debounce[player] = nil
 end)
 ```
 
-### NPC with PathfindingService
-```lua
-local PathfindingService = game:GetService("PathfindingService")
-function moveTo(npc, target)
-    local path = PathfindingService:CreatePath({
-        AgentRadius = 2,
-        AgentHeight = 5,
-        AgentCanJump = true,
-    })
-    path:ComputeAsync(npc.HumanoidRootPart.Position, target)
-    if path.Status == Enum.PathStatus.Success then
-        for _, wp in path:GetWaypoints() do
-            npc.Humanoid:MoveTo(wp.Position)
-            if wp.Action == Enum.PathWaypointAction.Jump then
-                npc.Humanoid.Jump = true
-            end
-            npc.Humanoid.MoveToFinished:Wait()
-        end
-    end
-end
-```
+---
 
-### Inventory/Data Module Pattern
-```lua
-local PlayerDataManager = {}
-local playerData = {}
-
-function PlayerDataManager.init(player)
-    local data = loadFromDataStore(player)
-    playerData[player] = data or getDefaultData()
-end
-
-function PlayerDataManager.get(player): PlayerData
-    return playerData[player]
-end
-
-function PlayerDataManager.set(player, key, value)
-    playerData[player][key] = value
-    markDirty(player)
-end
-
-function PlayerDataManager.cleanup(player)
-    saveToDataStore(player, playerData[player])
-    playerData[player] = nil
-end
-
-return PlayerDataManager
-```
-
-## Instance Creation & Manipulation
+## Instance Creation
 
 ```lua
 local part = Instance.new("Part")
@@ -474,24 +627,19 @@ part.Position = Vector3.new(0, 5, 0)
 part.Anchored = true
 part.Material = Enum.Material.Neon
 part.BrickColor = BrickColor.new("Bright blue")
-part.Parent = workspace -- ALWAYS set Parent last (performance)
+part.Parent = workspace -- ALWAYS set Parent last
 
--- Clone existing
 local clone = template:Clone()
 clone.Parent = workspace
 
--- Destroy
-part:Destroy() -- removes from game, GC'd
+part:Destroy()
 
--- Finding
 local child = model:FindFirstChild("PartName")
-local descendant = model:FindFirstDescendant("Deep")
 local byClass = model:FindFirstChildOfClass("Humanoid")
-local byTag = CollectionService:GetTagged("Enemy")
-
--- WaitForChild (with timeout)
 local gui = player:WaitForChild("PlayerGui", 5)
 ```
+
+---
 
 ## Signals & Events
 
@@ -501,13 +649,11 @@ local event = Instance.new("BindableEvent")
 event.Event:Connect(function(data) end)
 event:Fire(data)
 
--- Custom signal (no Instance overhead)
+-- Custom Signal (no Instance overhead)
 local Signal = {}
 Signal.__index = Signal
 function Signal.new()
-    local self = setmetatable({}, Signal)
-    self._connections = {}
-    return self
+    return setmetatable({_connections = {}}, Signal)
 end
 function Signal:connect(fn)
     table.insert(self._connections, fn)
@@ -523,186 +669,38 @@ function Signal:fire(...)
 end
 ```
 
-## task Library (Modern scheduling)
+---
+
+## Cross-Server
 
 ```lua
-task.spawn(fn, ...)       -- immediate new thread
-task.defer(fn, ...)       -- next resumption cycle
-task.delay(seconds, fn)   -- delayed execution
-task.wait(seconds)        -- precise yield
-task.cancel(thread)       -- cancel spawned thread
-```
-
-## MarketplaceService
-
-```lua
-local MPS = game:GetService("MarketplaceService")
-
--- Developer Products (repeatable purchases)
-MPS.ProcessReceipt = function(info)
-    local player = game.Players:GetPlayerByUserId(info.PlayerId)
-    if not player then return Enum.ProductPurchaseDecision.NotProcessedYet end
-    grantProduct(player, info.ProductId)
-    return Enum.ProductPurchaseDecision.PurchaseGranted
-end
-
--- GamePass check
-local hasPass = MPS:UserOwnsGamePassAsync(player.UserId, PASS_ID)
-
--- Prompt purchase
-MPS:PromptProductPurchase(player, PRODUCT_ID)
-MPS:PromptGamePassPurchase(player, PASS_ID)
-```
-
-## Cross-Server (MessagingService + MemoryStore)
-
-```lua
--- MessagingService: pub/sub between servers
+-- MessagingService
 local MS = game:GetService("MessagingService")
-MS:SubscribeAsync("GlobalAnnounce", function(message)
-    -- message.Data, message.Sent
-end)
-MS:PublishAsync("GlobalAnnounce", {text = "Event starting!"})
+MS:SubscribeAsync("Channel", function(msg) end)
+MS:PublishAsync("Channel", {text = "Hello"})
 
--- MemoryStoreService: temp shared data (matchmaking, queues)
+-- MemoryStoreService (temp shared data, matchmaking)
 local MSS = game:GetService("MemoryStoreService")
 local queue = MSS:GetQueue("Matchmaking")
-queue:AddAsync({playerId = player.UserId, rank = 1500}, 300) -- 300s expiry
-local items = queue:ReadAsync(10, false, 5) -- count, allOrNothing, timeout
+queue:AddAsync({playerId = player.UserId}, 300)
+local items = queue:ReadAsync(10, false, 5)
 ```
 
-## File Organization (Enterprise)
+---
+
+## Enterprise File Organization
 
 ```
 ServerScriptService/
-├── Services/          -- Game logic modules (RoundService, CombatService)
-├── DataManager.lua    -- Player data handling
-├── init.server.lua    -- Bootstrap, initializes all services
+├── Services/           -- RoundService, CombatService, etc.
+├── DataManager.lua     -- Central data handling
+├── init.server.lua     -- Bootstrap
 ReplicatedStorage/
-├── Modules/           -- Shared utilities (Utils, Config, Types)
-├── Remotes/           -- Folder of RemoteEvents/Functions
-├── Assets/            -- Shared models, effects
-StarterPlayerScripts/
-├── Controllers/       -- Client controllers (InputController, UIController)
-├── init.client.lua    -- Client bootstrap
+├── Modules/            -- Shared utilities
+├── Events/             -- Folder of RemoteEvents/Functions
+├── Assets/             -- Shared models
 StarterGui/
-├── MainUI/            -- ScreenGui templates
+├── GameUI.client.lua   -- Main UI controller
+StarterPlayerScripts/
+├── Controllers/        -- Input, Camera controllers
 ```
-
-## MCP Bridge – Remote Development Workflow
-
-When working with a Roblox project that uses the MCP Bridge (detected by `scripts/push.ps1` or `scripts/pull.ps1` in the workspace), follow this workflow strictly.
-
-### Mandatory Startup Sequence
-
-**BEFORE writing or editing any Luau code, ALWAYS execute these steps in order:**
-
-1. **Pull all scripts from Roblox Studio** → Run `.\scripts\pull.ps1`
-2. **Read the pulled files** in `roblox-src/` to understand current state
-3. **Only then** start making changes to the local files
-4. **After changes** → Run `.\scripts\push.ps1` to deploy
-
-Never skip the pull step. The source of truth is always Roblox Studio until pulled locally.
-
-### Directory Structure
-
-All game scripts live in `roblox-src/` mirroring the Roblox DataModel hierarchy:
-
-```
-roblox-src/
-  ServerScriptService/
-    GameServer.server.lua
-    LeaderboardHandler.server.lua
-    ShopHandler.server.lua
-  ServerStorage/
-    GameModules/
-      DataManager.module.lua
-      TicTacToeLogic.module.lua
-      ConnectFourLogic.module.lua
-  StarterGui/
-    GameClient.client.lua
-  ReplicatedStorage/
-    ...
-```
-
-### File Naming Convention
-
-| Suffix | Roblox ClassName | Runs On |
-|--------|-----------------|---------|
-| `.server.lua` | Script | Server |
-| `.client.lua` | LocalScript | Client |
-| `.module.lua` | ModuleScript | Wherever required |
-
-The folder path maps directly to the Roblox instance path:
-- `roblox-src/ServerScriptService/GameServer.server.lua` → `game.ServerScriptService.GameServer`
-- `roblox-src/ServerStorage/GameModules/DataManager.module.lua` → `game.ServerStorage.GameModules.DataManager`
-
-### Scripts
-
-**`scripts/pull.ps1`** – Pulls ALL scripts from Roblox Studio into `roblox-src/`
-- Clears `roblox-src/` first, then recreates from live game state
-- Creates `_tree.json` with full instance tree for reference
-- Detects script type from ClassName and applies correct file suffix
-
-**`scripts/push.ps1`** – Pushes ALL `.lua` files from `roblox-src/` to Roblox Studio
-- Reads each file, resolves game path from folder structure
-- Sends source code via MCP Bridge API (`setScriptSource` action)
-- Reports success/failure per file
-
-### API Details
-
-| Field | Value |
-|-------|-------|
-| Base URL | `https://bridge-cloud.vercel.app/api` |
-| Auth Header | `X-API-Key` |
-| Endpoints | `/command` (execute actions), `/poll` (get pending), `/result` (send back) |
-
-Actions available via `/command`:
-- `getGameTree` – Full instance tree
-- `getChildren` – Children of a path
-- `getScriptSource` – Read script source
-- `setScriptSource` – Write script source (params: path, source)
-- `getAllScripts` – All scripts with source and className
-- `executeScript` – Run arbitrary Luau in Studio command bar
-
-### Editing Workflow (Step by Step)
-
-```
-1. .\scripts\pull.ps1              ← Get latest from Studio
-2. Read/analyze roblox-src/ files  ← Understand current code
-3. Edit files locally              ← Make changes in roblox-src/
-4. .\scripts\push.ps1              ← Deploy to Studio
-5. Test in Roblox Studio           ← Verify changes work
-6. Repeat 3-5 as needed            ← Iterate
-```
-
-### Rules
-
-- NEVER use the API directly to edit scripts. Always edit local files and push.
-- NEVER create new scripts via API. Create the `.lua` file locally in the correct folder, then push.
-- ALWAYS pull before starting work on an existing project.
-- The `roblox-src/` folder IS the local source of truth after pulling.
-- If push fails with "Instance not found", the script doesn't exist in Studio yet – create it via `executeScript` action first, then push source.
-
-### Creating New Scripts
-
-To add a new script that doesn't exist in Studio yet:
-
-1. Create the file locally: `roblox-src/ServerScriptService/MyNew.server.lua`
-2. Create the instance in Studio first:
-```powershell
-$body = @{id="create"; action="executeScript"; params=@{source="local s = Instance.new('Script'); s.Name = 'MyNew'; s.Parent = game.ServerScriptService"}} | ConvertTo-Json -Depth 5
-Invoke-RestMethod -Uri "$baseUrl" -Method POST -Headers $h -Body ([System.Text.Encoding]::UTF8.GetBytes($body))
-```
-3. Then push: `.\scripts\push.ps1`
-
-## References
-
-See `references/` directory for detailed docs on specific topics:
-- architecture.md - Deep dive on game architecture patterns
-- networking.md - Advanced networking, replication, optimization
-- data-stores.md - Full DataStore patterns with error handling
-- ui-system.md - Complete UI reference with responsive patterns
-- patterns.md - Game design patterns (state machines, ECS, observer)
-- services.md - Full service API reference
-- animation.md - TweenService, AnimationController, Sequencing

@@ -1,79 +1,67 @@
 # Roblox Studio Dev Skill
 
-AI-Agent-Skill für professionelle Roblox-Spieleentwicklung mit Luau. Enthält Architektur-Patterns, Client-Server-Networking, DataStores, UI-System, Physics, Security, Performance-Optimierung und den kompletten **MCP Bridge Workflow** für Remote-Development.
+All-in-one AI agent skill for Roblox game development. Contains the complete MCP Bridge remote workflow + full Luau/Roblox knowledge base.
 
-## Installation
+## What This Skill Does
 
-### Globale Installation (alle Projekte)
+When installed, any AI agent working with a Roblox MCP Bridge workspace will automatically:
 
-```bash
-# Repo klonen
-git clone https://github.com/ksinec45/roblox-studio-dev-skill.git
+1. **Test the connection** to Roblox Studio
+2. **Pull all scripts** before touching any code
+3. **Work locally** in `roblox-src/`
+4. **Push changes** back to Studio
+5. **Follow Roblox best practices** (security, performance, patterns)
 
-# SKILL.md in den globalen Skills-Ordner kopieren
-# Windows:
-copy roblox-studio-dev-skill\SKILL.md %USERPROFILE%\.agents\skills\roblox-studio-dev\SKILL.md
+## Install (Global – works in every workspace)
 
-# Mac/Linux:
-cp roblox-studio-dev-skill/SKILL.md ~/.agents/skills/roblox-studio-dev/SKILL.md
+### Windows (PowerShell)
+
+```powershell
+$skillDir = "$env:USERPROFILE\.agents\skills\roblox-studio-dev"
+New-Item -ItemType Directory -Path $skillDir -Force
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/ksinec45/roblox-studio-dev-skill/main/SKILL.md" -OutFile "$skillDir\SKILL.md"
 ```
 
-### Oder direkt per curl
+### Mac / Linux
 
 ```bash
-# Windows (PowerShell):
-New-Item -ItemType Directory -Path "$env:USERPROFILE\.agents\skills\roblox-studio-dev" -Force
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/ksinec45/roblox-studio-dev-skill/main/SKILL.md" -OutFile "$env:USERPROFILE\.agents\skills\roblox-studio-dev\SKILL.md"
-
-# Mac/Linux:
 mkdir -p ~/.agents/skills/roblox-studio-dev
-curl -o ~/.agents/skills/roblox-studio-dev/SKILL.md https://raw.githubusercontent.com/ksinec45/roblox-studio-dev-skill/main/SKILL.md
+curl -o ~/.agents/skills/roblox-studio-dev/SKILL.md \
+  https://raw.githubusercontent.com/ksinec45/roblox-studio-dev-skill/main/SKILL.md
 ```
 
-## Was der Skill abdeckt
+### Manual
 
-| Bereich | Inhalt |
-|---------|--------|
-| Architektur | Client-Server Model, Container, RunContext |
-| Luau | Types, OOP, Metatables, Parallel Luau |
-| Networking | RemoteEvents, RemoteFunctions, Validation |
-| DataStores | CRUD, Session Locking, Auto-Save |
-| UI | ScreenGui, Layouts, TweenService Animations |
-| Physics | Constraints, Network Ownership, Collision Groups |
-| Security | Anti-Cheat, Input Validation, Rate Limiting |
-| Performance | Object Pooling, Profiling, Streaming |
-| MCP Bridge | Pull/Push Workflow, API, lokale Entwicklung |
+1. Clone this repo: `git clone https://github.com/ksinec45/roblox-studio-dev-skill.git`
+2. Copy `SKILL.md` to `~/.agents/skills/roblox-studio-dev/SKILL.md`
 
-## MCP Bridge Workflow
+## Verify Installation
 
-Wenn der Skill erkennt, dass `scripts/pull.ps1` und `scripts/push.ps1` im Workspace existieren, erzwingt er diesen Workflow:
+Ask your AI agent: "Welche Roblox Skills hast du?" – It should describe the MCP Bridge workflow and Luau knowledge.
 
-```
-1. .\scripts\pull.ps1              ← Alle Scripts von Roblox Studio holen
-2. Dateien in roblox-src/ lesen    ← Code analysieren und verstehen
-3. Lokal editieren                 ← Änderungen in roblox-src/ machen
-4. .\scripts\push.ps1              ← Zurück nach Roblox Studio deployen
-5. In Studio testen                ← Verifizieren
-```
+## What's Inside
 
-**Regel:** Nie direkt über die API editieren. Immer lokal arbeiten und pushen.
+| Section | Content |
+|---------|---------|
+| MCP Bridge Workflow | Connection test, Pull/Read/Edit/Push cycle, creating new scripts, API reference |
+| Luau Language | Types, strict mode, OOP, metatables, task library |
+| Architecture | Client-server model, containers, script types |
+| Networking | RemoteEvents, RemoteFunctions, validation rules |
+| DataStores | CRUD, session locking, auto-save, data manager pattern |
+| UI System | ScreenGui, layouts, code-generated UI, TweenService |
+| Physics | Constraints, network ownership, collision groups |
+| Security | Anti-cheat golden rules, validation pattern |
+| Performance | Object pooling, parallel Luau, optimization tips |
+| Patterns | Round system, matchmaking queue, debounce, signals |
+| MarketplaceService | DevProducts, GamePasses, ProcessReceipt |
+| Cross-Server | MessagingService, MemoryStoreService |
 
-## Für AI-Agenten
+## Requirements
 
-Wenn du ein AI-Agent bist und diesen Skill geladen hast:
+- [Roblox MCP Bridge](https://github.com/ksinec45/roblox-mcp-bridge) (Plugin + Cloud API)
+- Roblox Studio with HTTP Requests enabled
+- PowerShell (for pull/push scripts)
 
-1. **Prüfe ob `scripts/pull.ps1` existiert** → Falls ja, führe den MCP Bridge Workflow aus
-2. **IMMER erst `.\scripts\pull.ps1` ausführen** bevor du Code anfasst
-3. **Lies die gepullten Dateien** in `roblox-src/` um den aktuellen Stand zu verstehen
-4. **Editiere NUR lokale Dateien** in `roblox-src/`
-5. **Pushe mit `.\scripts\push.ps1`** nach jeder Änderung
-
-## Voraussetzungen
-
-- [Roblox MCP Bridge](https://github.com/ksinec45/roblox-mcp-bridge) Setup (Plugin + Server)
-- Roblox Studio mit aktivierten HTTP Requests
-- PowerShell (für die Push/Pull Scripts)
-
-## Lizenz
+## License
 
 MIT
