@@ -19,7 +19,7 @@ When installed, any AI agent working with a Roblox MCP Bridge workspace will aut
 ```powershell
 $skillDir = "$env:USERPROFILE\.agents\skills\roblox-studio-dev"
 New-Item -ItemType Directory -Path $skillDir -Force
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/ksinec45/roblox-studio-dev-skill/main/SKILL.md" -OutFile "$skillDir\SKILL.md"
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/KS55aa/testskill/main/SKILL.md" -OutFile "$skillDir\SKILL.md"
 ```
 
 ### Mac / Linux
@@ -27,12 +27,12 @@ Invoke-WebRequest -Uri "https://raw.githubusercontent.com/ksinec45/roblox-studio
 ```bash
 mkdir -p ~/.agents/skills/roblox-studio-dev
 curl -o ~/.agents/skills/roblox-studio-dev/SKILL.md \
-  https://raw.githubusercontent.com/ksinec45/roblox-studio-dev-skill/main/SKILL.md
+  https://raw.githubusercontent.com/KS55aa/testskill/main/SKILL.md
 ```
 
 ### Manual
 
-1. Clone this repo: `git clone https://github.com/ksinec45/roblox-studio-dev-skill.git`
+1. Clone this repo: `git clone https://github.com/KS55aa/testskill.git`
 2. Copy `SKILL.md` to `~/.agents/skills/roblox-studio-dev/SKILL.md`
 
 ## Verify Installation
@@ -58,7 +58,7 @@ Ask your AI agent: "Welche Roblox Skills hast du?" – It should describe the MC
 
 ## Requirements
 
-- [Roblox MCP Bridge](https://github.com/ksinec45/roblox-mcp-bridge) (Plugin + Cloud API)
+- [Roblox MCP Bridge](https://github.com/KS55aa/testskill) (Plugin + Cloud API)
 - Roblox Studio with HTTP Requests enabled
 - PowerShell (for pull/push scripts)
 
